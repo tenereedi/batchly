@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.mypy_cache/
+.cache/
+*.log
+env/
+.venv/
+Desktop.ini
+.Python
+dist/
+.DS_Store
+develop-eggs/
+.pytest_cache/
+build/
