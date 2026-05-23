@@ -1,61 +1,64 @@
-from dataclasses import dataclass, field
-from datetime import datetime
+"""Core job definition for batchly."""
+
+import uuid
 from enum import Enum
 from typing import Any, Callable, Dict, Optional
-import uuid
+
+from batchly.retry import RetryPolicy, NoRetry
 
 
 class JobStatus(Enum):
-    PENDING = "pending"
-    RUNNING = "running"
-    SUCCESS = "success"
-    FAILED = "failed"
-    RETRYING = "retrying"
+    PENDING = 'pending'
+    RUNNING = 'running'
+    SUCCESS = 'success'
+    FAILED = 'failed'
 
 
-@dataclass
 class Job:
-    """Represents a single unit of work in the queue."""
+    """Represents a single unit of work to be executed by a worker."""
 
-    func: Callable
-    args: tuple = field(default_factory=tuple)
-    kwargs: Dict[str, Any] = field(default_factory=dict)
-    job_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    status: JobStatus = JobStatus.PENDING
-    max_retries: int = 3
-    retry_count: int = 0
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    started_at: Optional[datetime] = None
-    finished_at: Optional[datetime] = None
-    result: Any = None
-    error: Optional[str] = None
+    def __init__(
+        self,
+        func: Callable,
+        *args: Any,
+        retry_policy: Optional[RetryPolicy] = None,
+        **kwargs: Any,
+    ):
+        self.id: str = str(uuid.uuid4())
+        self.func = func
+        self.args = args
+        self.kwargs = kwargs
+        self.retry_policy: RetryPolicy = retry_policy or NoRetry()
+        self.status: JobStatus = JobStatus.PENDING
+        self.result: Any = None
+        self.error: Optional[Exception] = None
+        self.attempts: int = 0
+        self.metadata: Dict[str, Any] = {}
 
     def run(self) -> Any:
-        """Execute the job's function with its arguments."""
+        """Execute the job function and update status accordingly."""
         self.status = JobStatus.RUNNING
-        self.started_at = datetime.utcnow()
+        self.attempts += 1
         try:
             self.result = self.func(*self.args, **self.kwargs)
             self.status = JobStatus.SUCCESS
             return self.result
         except Exception as exc:
-            self.error = str(exc)
-            if self.retry_count < self.max_retries:
-                self.retry_count += 1
-                self.status = JobStatus.RETRYING
-            else:
-                self.status = JobStatus.FAILED
+            self.error = exc
+            self.status = JobStatus.FAILED
             raise
-        finally:
-            self.finished_at = datetime.utcnow()
 
-    @property
     def can_retry(self) -> bool:
         """Return True if the job is eligible for another attempt."""
-        return self.status == JobStatus.RETRYING
+        if self.error is None:
+            return False
+        return self.retry_policy.should_retry(
+            attempt=self.attempts,
+            exception=self.error,
+        )
 
     def __repr__(self) -> str:
         return (
-            f"Job(id={self.job_id!r}, func={self.func.__name__!r}, "
-            f"status={self.status.value!r}, retries={self.retry_count}/{self.max_retries})"
+            f"Job(id={self.id!r}, func={self.func.__name__!r}, "
+            f"status={self.status.value!r}, attempts={self.attempts})"
         )
