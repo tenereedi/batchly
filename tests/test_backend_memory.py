@@ -58,3 +58,20 @@ class TestInMemoryBackend:
         r = repr(self.backend)
         assert "InMemoryBackend" in r
         assert "size=0" in r
+
+    def test_push_multiple_updates_size_correctly(self):
+        jobs = [Job(add, args=[i, i + 1]) for i in range(5)]
+        for job in jobs:
+            self.backend.push(job)
+        assert self.backend.size() == 5
+        assert len(self.backend) == 5
+
+    def test_pop_all_jobs_leaves_empty_backend(self):
+        job1 = Job(add, args=[1, 2])
+        job2 = Job(add, args=[3, 4])
+        self.backend.push(job1)
+        self.backend.push(job2)
+        self.backend.pop()
+        self.backend.pop()
+        assert self.backend.size() == 0
+        assert self.backend.pop() is None
